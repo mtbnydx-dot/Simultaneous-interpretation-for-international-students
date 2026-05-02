@@ -73,10 +73,6 @@ pip install -r requirements-app.txt
 
 特别注意：HY-MT1.5 使用 Tencent HY Community License Agreement，不是 MIT/Apache 这类宽松开源许可证。它包含地域、用途、分发声明和服务披露要求。公开发布、商业收费或面向第三方分发前，请先确认你的使用方式满足该许可证。
 
-## 项目代码许可证
-
-当前仓库还没有为你自己的代码选择开源许可证。公开到 GitHub 前建议补一个根目录 `LICENSE` 文件；否则别人可以看代码，但默认不获得明确的复制、修改和再分发授权。
-
 ## 安全检查
 
 上传前建议运行：
