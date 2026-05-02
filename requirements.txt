@@ -1,0 +1,47 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+websockets>=14.0
+huggingface-hub>=0.26.0
+numpy>=1.26.0
+scipy>=1.11.0
+sounddevice>=0.5.0
+pydantic>=2.10.0
+pydantic-settings>=2.7.0
+torch>=2.2.0
+torchaudio>=2.2.0
+
+# ── ASR ─────────────────────────────────────────────────────
+faster-whisper>=1.1.0
+ctranslate2>=4.5.0
+# transformers + sentencepiece + accelerate 用于高精度 transformers-whisper 回退/可选后端
+transformers>=4.40.0
+sentencepiece>=0.2.0
+accelerate>=0.30.0
+
+# ── MT (HY-MT1.5 GGUF via llama-cpp-python) ─────────────────
+# 默认通过 pip 安装；macOS 如需 Metal 会在设备检测时确认是否支持 GPU offload：
+llama-cpp-python>=0.3.0
+#
+# 若需 GPU 加速（必须从源码重编译）：
+#   NVIDIA CUDA:
+#     CMAKE_ARGS="-DGGML_CUDA=on" pip install --force-reinstall --no-cache-dir llama-cpp-python
+#   Apple Metal (Mac M 系列默认就启用)：
+#     CMAKE_ARGS="-DGGML_METAL=on" FORCE_CMAKE=1 pip install --force-reinstall --no-cache-dir llama-cpp-python
+#   Intel iGPU/dGPU via SYCL (需 Intel oneAPI Base Toolkit)：
+#     CMAKE_ARGS="-DGGML_SYCL=ON" pip install --force-reinstall --no-cache-dir llama-cpp-python
+#   通用 GPU via Vulkan：
+#     CMAKE_ARGS="-DGGML_VULKAN=ON" pip install --force-reinstall --no-cache-dir llama-cpp-python
+
+# Silero VAD —— 通过 torch.hub 在首次使用时下载（依赖 torch/torchaudio）
+
+# ── 可选：Intel OpenVINO ASR 加速 ───────────────────────────
+# 若使用 Intel iGPU/NPU 跑 ASR 后端，取消下面两行注释：
+# optimum[openvino]>=1.23.0
+# openvino>=2024.4.0
+
+# ── 可选：旧 NLLB / opus-mt MT 回退 ─────────────────────────
+# model_download.py 仅在 mt_model_id 不是 .gguf 时才会用到 sacremoses
+# sacremoses>=0.1.1
+
+# PyTorch/torchaudio 已作为基础依赖安装；如需 NVIDIA CUDA 专用 wheel，可按需重装：
+#   pip install --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124

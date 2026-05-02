@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransLive 0.88 (test) 字幕</title>
+    <link rel="stylesheet" href="/assets/overlay.css">
+</head>
+<body>
+    <div class="subtitle-shell">
+        <header class="overlay-toolbar">
+            <span class="overlay-title">TransLive 字幕 · v0.88 (test) · 薛定谔的帮你偶</span>
+            <div class="mode-switch" role="group" aria-label="字幕显示模式">
+                <button type="button" data-mode="bilingual">双语</button>
+                <button type="button" data-mode="translation">仅译文</button>
+            </div>
+            <div class="overlay-tools" role="group" aria-label="字幕窗样式">
+                <button type="button" id="fontDownBtn" title="减小字体" aria-label="减小字体">A-</button>
+                <button type="button" id="fontUpBtn" title="增大字体" aria-label="增大字体">A+</button>
+                <button type="button" id="frameDownBtn" title="缩小字幕窗" aria-label="缩小字幕窗">□-</button>
+                <button type="button" id="frameUpBtn" title="放大字幕窗" aria-label="放大字幕窗">□+</button>
+            </div>
+            <button type="button" class="close-btn" id="closeBtn" title="关闭" aria-label="关闭">×</button>
+        </header>
+
+        <main class="subtitle-stage" id="subtitleStage" aria-live="polite">
+            <div class="subtitle-empty">等待字幕…</div>
+        </main>
+        <button type="button" class="resize-grip" id="resizeGrip" title="拖拽调整大小" aria-label="拖拽调整大小"></button>
+    </div>
+
+    <script src="/assets/overlay.js"></script>
+</body>
+</html>

@@ -1,0 +1,268 @@
+:root {
+    --overlay-bg: rgba(7, 10, 15, 0.66);
+    --overlay-bg-strong: rgba(7, 10, 15, 0.82);
+    --overlay-border: rgba(255, 255, 255, 0.18);
+    --overlay-text: #f7f9fc;
+    --overlay-muted: rgba(247, 249, 252, 0.68);
+    --overlay-soft: rgba(255, 255, 255, 0.11);
+    --overlay-accent: #7ea0ff;
+    --overlay-error: #ff7777;
+    --overlay-font-scale: 1;
+}
+
+* { box-sizing: border-box; }
+
+html,
+body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: transparent;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+                 "Hiragino Sans GB", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+    color: var(--overlay-text);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+button {
+    font: inherit;
+}
+
+.subtitle-shell {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 10px 12px 12px;
+    display: grid;
+    grid-template-rows: 34px minmax(0, 1fr);
+    gap: 8px;
+}
+
+.overlay-toolbar {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px 4px 10px;
+    border: 1px solid var(--overlay-border);
+    border-radius: 8px;
+    background: var(--overlay-bg-strong);
+    color: var(--overlay-muted);
+    opacity: 0.28;
+    transition: opacity 0.15s ease;
+    backdrop-filter: blur(16px);
+}
+
+body:hover .overlay-toolbar,
+.overlay-toolbar:focus-within {
+    opacity: 1;
+}
+
+.overlay-title {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.mode-switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.overlay-tools {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.mode-switch button,
+.overlay-tools button,
+.close-btn {
+    min-height: 24px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: transparent;
+    color: var(--overlay-muted);
+    cursor: pointer;
+}
+
+.mode-switch button {
+    padding: 3px 9px;
+    font-size: 12px;
+}
+
+.overlay-tools button {
+    min-width: 28px;
+    padding: 3px 6px;
+    font-size: 12px;
+    font-weight: 750;
+}
+
+.mode-switch button.active {
+    background: var(--overlay-soft);
+    border-color: var(--overlay-border);
+    color: var(--overlay-text);
+}
+
+.close-btn {
+    width: 26px;
+    padding: 0;
+    font-size: 18px;
+    line-height: 1;
+}
+
+.mode-switch button:hover,
+.overlay-tools button:hover,
+.close-btn:hover {
+    color: var(--overlay-text);
+    border-color: var(--overlay-border);
+    background: var(--overlay-soft);
+}
+
+.subtitle-stage {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 8px;
+    padding: 14px 18px;
+    overflow: hidden;
+    border: 1px solid var(--overlay-border);
+    border-radius: 10px;
+    background: var(--overlay-bg);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.32);
+    backdrop-filter: blur(18px);
+}
+
+.subtitle-empty {
+    width: 100%;
+    text-align: center;
+    color: var(--overlay-muted);
+    font-size: 18px;
+    font-weight: 650;
+}
+
+.subtitle-card {
+    min-width: 0;
+    padding-top: 8px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.subtitle-card:first-child {
+    padding-top: 0;
+    border-top: none;
+}
+
+.subtitle-original,
+.subtitle-translation {
+    margin: 0;
+    overflow-wrap: anywhere;
+    text-shadow: 0 2px 12px rgba(0, 0, 0, 0.58);
+}
+
+.subtitle-original {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--overlay-muted);
+    font-size: calc(18px * var(--overlay-font-scale));
+    line-height: 1.35;
+    font-weight: 580;
+}
+
+.subtitle-translation {
+    color: var(--overlay-text);
+    font-size: calc(28px * var(--overlay-font-scale));
+    line-height: 1.28;
+    font-weight: 760;
+}
+
+.subtitle-card.streaming .subtitle-translation::after {
+    content: "▍";
+    margin-left: 2px;
+    color: var(--overlay-accent);
+    animation: blink 0.7s infinite;
+}
+
+.subtitle-card.error .subtitle-translation {
+    color: var(--overlay-error);
+}
+
+body[data-mode="translation"] .subtitle-stage {
+    padding: 18px 22px;
+}
+
+body[data-mode="translation"] .subtitle-original {
+    display: none;
+}
+
+body[data-mode="translation"] .subtitle-translation {
+    font-size: calc(34px * var(--overlay-font-scale));
+    line-height: 1.25;
+}
+
+.resize-grip {
+    position: absolute;
+    right: 4px;
+    bottom: 4px;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: 0;
+    border-radius: 6px;
+    background:
+        linear-gradient(135deg, transparent 45%, rgba(255, 255, 255, 0.55) 46%, rgba(255, 255, 255, 0.55) 52%, transparent 53%),
+        linear-gradient(135deg, transparent 61%, rgba(255, 255, 255, 0.38) 62%, rgba(255, 255, 255, 0.38) 68%, transparent 69%);
+    cursor: nwse-resize;
+    opacity: 0.2;
+}
+
+body:hover .resize-grip,
+.resize-grip:focus-visible {
+    opacity: 0.9;
+    background-color: var(--overlay-soft);
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+@media (max-width: 640px), (max-height: 190px) {
+    .subtitle-shell {
+        padding: 8px;
+        grid-template-rows: 30px minmax(0, 1fr);
+    }
+
+    .overlay-toolbar {
+        min-height: 30px;
+    }
+
+    .subtitle-stage {
+        padding: 10px 12px;
+    }
+
+    .subtitle-original {
+        font-size: calc(14px * var(--overlay-font-scale));
+    }
+
+    .subtitle-translation {
+        font-size: calc(22px * var(--overlay-font-scale));
+    }
+
+    body[data-mode="translation"] .subtitle-translation {
+        font-size: calc(25px * var(--overlay-font-scale));
+    }
+}

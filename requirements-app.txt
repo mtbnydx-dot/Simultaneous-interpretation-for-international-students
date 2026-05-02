@@ -1,0 +1,7 @@
+pywebview>=5.3
+pyinstaller>=6.0
+pyobjc-framework-Cocoa>=9.0; sys_platform == "darwin"
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+pyobjc-framework-AVFoundation>=10.0; sys_platform == "darwin"
+pyobjc-framework-CoreMedia>=10.0; sys_platform == "darwin"
+pyobjc-framework-ScreenCaptureKit>=10.0; sys_platform == "darwin"

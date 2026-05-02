@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TransLive 0.88 (test) · AI 同声传译</title>
+    <link rel="stylesheet" href="/assets/style.css">
+</head>
+<body>
+    <div id="app">
+        <header>
+            <div class="brand">
+                <h1>TransLive</h1>
+                <span class="tagline">AI 同声传译</span>
+                <span class="version-pill" id="versionPill">v0.88 (test)</span>
+                <span class="credit-line" id="creditLine">薛定谔的帮你偶</span>
+            </div>
+            <div class="badges">
+                <span class="badge" id="asrBadge" title="ASR 模型">ASR <em>—</em></span>
+                <span class="badge" id="mtBadge"  title="MT 模型">MT <em>—</em></span>
+                <span class="status" id="status">未连接</span>
+            </div>
+        </header>
+
+        <section class="controls">
+            <div class="control-group">
+                <label>源语言</label>
+                <select id="sourceLang">
+                    <option value="en" selected>English</option>
+                    <option value="zh">中文</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="de">Deutsch</option>
+                    <option value="fr">Français</option>
+                    <option value="es">Español</option>
+                    <option value="ru">Русский</option>
+                    <option value="ar">العربية</option>
+                    <option value="pt">Português</option>
+                    <option value="it">Italiano</option>
+                    <option value="th">ไทย</option>
+                    <option value="vi">Tiếng Việt</option>
+                    <option value="id">Bahasa Indonesia</option>
+                    <option value="hi">हिन्दी</option>
+                    <option value="tr">Türkçe</option>
+                    <option value="pl">Polski</option>
+                    <option value="cs">Čeština</option>
+                    <option value="nl">Nederlands</option>
+                </select>
+            </div>
+
+            <div class="control-center">
+                <button id="swapLang" class="btn-icon-only" title="交换语言" aria-label="交换语言">⇄</button>
+                <button id="toggleBtn" class="btn-primary">
+                    <span class="btn-icon" aria-hidden="true"></span>
+                    <span class="btn-label">开始同传</span>
+                </button>
+            </div>
+
+            <div class="control-group">
+                <label>目标语言</label>
+                <select id="targetLang">
+                    <option value="zh" selected>中文</option>
+                    <option value="en">English</option>
+                    <option value="ja">日本語</option>
+                    <option value="ko">한국어</option>
+                    <option value="de">Deutsch</option>
+                    <option value="fr">Français</option>
+                    <option value="es">Español</option>
+                    <option value="ru">Русский</option>
+                    <option value="ar">العربية</option>
+                    <option value="pt">Português</option>
+                    <option value="it">Italiano</option>
+                    <option value="th">ไทย</option>
+                    <option value="vi">Tiếng Việt</option>
+                    <option value="id">Bahasa Indonesia</option>
+                    <option value="hi">हिन्दी</option>
+                    <option value="tr">Türkçe</option>
+                    <option value="pl">Polski</option>
+                    <option value="cs">Čeština</option>
+                    <option value="nl">Nederlands</option>
+                </select>
+            </div>
+        </section>
+
+        <!-- 术语表面板 -->
+        <section class="glossary-section">
+            <button id="glossaryToggle" class="btn-secondary glossary-toggle-btn" title="设置术语表">
+                术语表
+            </button>
+            <div class="glossary-panel" id="glossaryPanel">
+                <div class="glossary-header">
+                    <span>术语对照表</span>
+                    <span class="muted">自定义翻译词汇</span>
+                </div>
+                <div class="glossary-rows" id="glossaryRows"></div>
+                <div class="glossary-actions">
+                    <button id="glossaryAddBtn" class="btn-secondary">+ 添加</button>
+                    <button id="glossaryApplyBtn" class="btn-primary glossary-apply-btn">应用</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="meter-row">
+            <div class="meter" id="meter" aria-hidden="true">
+                <div class="meter-bar" id="meterBar"></div>
+            </div>
+            <span class="hint" id="hint">点击「开始同传」并允许麦克风权限</span>
+        </section>
+
+        <main class="transcript" id="transcript" tabindex="0">
+            <div class="empty-state" id="emptyState">
+                <div class="empty-icon"></div>
+                <p>等待第一段语音…</p>
+                <p class="muted">说话或播放音频，识别结果会成对显示在这里。</p>
+            </div>
+        </main>
+
+        <button class="jump-pill" id="jumpPill" hidden>↓ 跳到最新</button>
+
+        <footer>
+            <div class="footer-left">
+                <button id="clearBtn"  class="btn-secondary">清空</button>
+                <button id="copyBtn"   class="btn-secondary">复制全部</button>
+                <button id="exportTxt" class="btn-secondary">导出 .txt</button>
+                <button id="exportSrt" class="btn-secondary">导出 .srt</button>
+                <button id="modelDownloadBtn" class="btn-secondary">下载模型</button>
+                <div class="audio-source-controls">
+                    <select id="audioSource" class="footer-select audio-source-select" title="音频输入" aria-label="音频输入">
+                        <option value="system" selected>系统音频</option>
+                        <option value="mic">麦克风</option>
+                    </select>
+                </div>
+                <div class="subtitle-controls">
+                    <select id="subtitleMode" class="footer-select" title="字幕显示模式" aria-label="字幕显示模式">
+                        <option value="bilingual" selected>双语</option>
+                        <option value="translation">仅译文</option>
+                    </select>
+                    <button id="subtitleWindowBtn" class="btn-secondary">字幕窗</button>
+                </div>
+                <label class="toggle">
+                    <input type="checkbox" id="autoScroll" checked>
+                    <span>自动滚动</span>
+                </label>
+            </div>
+            <div class="footer-right" id="stats">—</div>
+        </footer>
+
+        <div class="hotkeys" aria-hidden="true">空格 ⇄ 开始 / 停止</div>
+
+        <div class="modal-backdrop" id="modelPrompt" hidden>
+            <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modelPromptTitle">
+                <button id="modelPromptClose" class="modal-close btn-icon-only" title="关闭" aria-label="关闭">×</button>
+                <div class="modal-kicker">首次使用</div>
+                <h2 id="modelPromptTitle">下载翻译模型</h2>
+                <p id="modelPromptText">
+                    安装包不内置大模型。需要下载 HY-MT1.5 翻译模型后才能开始同传。
+                </p>
+                <div class="model-file" id="modelPromptModel">HY-MT1.5-1.8B-Q4_K_M.gguf</div>
+                <div class="modal-actions">
+                    <button id="modelPromptLater" class="btn-secondary">稍后</button>
+                    <button id="modelPromptDownload" class="btn-primary">下载模型</button>
+                </div>
+            </section>
+        </div>
+    </div>
+
+    <template id="cardTemplate">
+        <article class="card" data-seg="">
+            <header class="card-head">
+                <time class="ts"></time>
+                <span class="lang-pair"></span>
+                <span class="metrics muted"></span>
+            </header>
+            <div class="row original">
+                <span class="row-tag">原</span>
+                <p class="text"></p>
+            </div>
+            <div class="row translated pending">
+                <span class="row-tag">译</span>
+                <p class="text"><span class="dots"><i></i><i></i><i></i></span></p>
+            </div>
+        </article>
+    </template>
+
+    <script src="/assets/app.js"></script>
+</body>
+</html>
