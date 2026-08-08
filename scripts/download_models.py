@@ -17,8 +17,8 @@ MODELS_DIR = PROJECT_ROOT / "models"
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from app.core.config import settings
-from app.core.model_download import download_asr_model, download_mt_model
+from app.core.config import settings  # noqa: E402
+from app.core.model_download import download_asr_model, download_mt_model  # noqa: E402
 
 
 def download_asr():
@@ -37,7 +37,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
     parser = argparse.ArgumentParser(description="Download TransLive models")
     parser.add_argument("--asr", action="store_true", help="Download ASR model")
-    parser.add_argument("--mt", action="store_true", help="Download MT model (HY-MT1.5 GGUF)")
+    parser.add_argument("--mt", action="store_true", help="Download MT model (Hy-MT2 GGUF by default)")
     parser.add_argument("--all", action="store_true", help="Download all models")
     parser.add_argument("--force", action="store_true", help="Re-download MT model even if exists")
     args = parser.parse_args()

@@ -1,5 +1,9 @@
 # TransLive Distil-Whisper 集成指南
 
+> 历史资料：本文记录早期 Windows/Distil-Whisper 实验，不代表当前 macOS 默认
+> 配置。Apple Silicon 现在默认使用 Qwen3-ASR 1.7B 8bit + MLX/Metal；当前说明见
+> `README.md` 和 `MACOS_MIGRATION.md`。
+
 ## 已完成的改动
 
 ### 1. ASR 后端重构
@@ -25,7 +29,7 @@
 |------|----------|------|---------|
 | Windows + NVIDIA | transformers-distil | cuda | distil-large-v3 |
 | Windows + Intel iGPU | openvino | intel_gpu | whisper-medium |
-| Mac Apple Silicon | ct2 | cpu/int8 | large-v3-turbo |
+| Mac Apple Silicon | qwen3 | mlx/metal, 8bit | Qwen3-ASR-1.7B-8bit |
 | CPU | ct2 | cpu | whisper-medium |
 
 ## 快速开始
@@ -81,7 +85,7 @@ TRANS_ASR_DEVICE=intel_gpu
 ### 3. 启动服务器
 
 ```bash
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8766
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8766
 ```
 
 ### 4. 测试功能
@@ -166,7 +170,7 @@ ImportError: No module named 'torch'
 **解决**: 根据平台安装 PyTorch（见上方安装说明）
 
 ### 3. MPS 首次推理慢
-只有手动切到 `transformers-whisper` 后端时才会走 PyTorch MPS。MPS 第一次推理需要 JIT 编译（可能 10-30 秒），后续推理正常。默认 `ct2 + int8` 路径不会触发这段开销。
+只有手动切到 `transformers-whisper` 后端时才会走 PyTorch MPS。MPS 第一次推理需要 JIT 编译（可能 10-30 秒），后续推理正常。当前 macOS 默认 Qwen3-ASR 走 MLX/Metal，不走这条历史 CT2 路径。
 
 ### 4. 模型下载失败
 ```
@@ -178,7 +182,7 @@ RuntimeError: MT model download failed
 
 1. **测试 Whisper Turbo**: 安装依赖后，配置 `.env` 使用 `ct2 + large-v3-turbo + int8`
 2. **性能调优**: 根据实际使用情况调整 VAD 参数
-3. **Mac 测试**: 在 Mac 上测试 CT2 int8 实时性能
+3. **Mac 测试**: 在 Mac 上测试 Qwen3-ASR 8bit 的短片段延迟和内存占用
 4. **生产部署**: 考虑使用 GPU 加速和模型量化
 
 ## 参考资料

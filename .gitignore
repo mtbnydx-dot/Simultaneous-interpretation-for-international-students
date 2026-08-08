@@ -1,0 +1,75 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+dist/
+build/
+*.spec.bak
+
+# Virtual environment
+.venv/
+.venv-macos/
+.venv-macos-build*/
+venv/
+windows_legacy/.venv/
+windows_legacy/models/
+windows_legacy/tools/
+
+# Environment variables and signing material (may contain secrets)
+.env*
+!.env.example
+*.pem
+*.key
+*.p8
+*.p12
+*.pfx
+*.cer
+*.mobileprovision
+
+# Models (large files)
+models/
+*.gguf
+*.safetensors
+*.onnx
+*.pt
+*.pth
+pytorch_model.bin
+model.safetensors
+
+# Logs
+logs/
+*.log
+*.jsonl
+*.sqlite
+*.sqlite3
+
+# Local/generated upload bundles
+github_upload/
+*.zip
+
+# Packaged app output
+dist/
+
+# IDE
+.vs/
+.claude/
+.playwright-cli/
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Migration/change snapshots
+mac_app_changes/
+
+# Runtime markers
+.openvino_blocked
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store

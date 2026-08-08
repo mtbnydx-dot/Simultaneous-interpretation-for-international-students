@@ -4,6 +4,10 @@ Windows 启动脚本、旧虚拟环境和 Windows 版 llama.cpp 二进制已统�
 `windows_legacy/`。macOS 主流程只使用 `.venv-macos`、`llama-cpp-python`
 和 `dist/TransLive.app`，这些 Windows 文件不会参与运行或打包。
 
+当前分发包支持 Apple Silicon 上的 macOS 14.0 及以上版本，包括 macOS 14 和
+macOS 15；MLX 不支持 Intel Mac。ASR 固定为 Qwen3-ASR 8-bit，不打包 Whisper
+模型或 Whisper 推理后端。
+
 ## 快速启动
 
 ```bash
@@ -26,12 +30,14 @@ http://127.0.0.1:8766/
 
 ## Apple Silicon / Metal
 
-ASR 默认会在 Apple Silicon 上走 `faster-whisper / CTranslate2 + CPU int8`，
-模型为 `large-v3-turbo`，优先保证实时性。若你更看重准确率且能接受更高延迟，
-可在 `.env` 中切到 `TRANS_ASR_BACKEND=transformers-whisper` 和
-`TRANS_ASR_MODEL_ID=openai/whisper-large-v3-turbo`。MT 默认走
-`llama-cpp-python`，只有在当前安装的 `llama-cpp-python` 确认支持 GPU offload 时
-才启用 Metal；否则自动降级 CPU，避免启动失败。
+Apple Silicon 默认使用 `mlx-community/Qwen3-ASR-1.7B-8bit`，经
+`mlx-audio` 在 MLX/Metal 上运行。该模型是 8bit 量化版本；`mlx-audio`
+不可用或加载失败时，程序才回退到 MLX Whisper。ASR 与 MT 会顺序加载，避免两个
+大模型同时从磁盘读入造成峰值内存和 I/O 抖动。
+
+MT 默认使用 Hy-MT2 GGUF，并通过带 Metal 的 `llama-cpp-python` 将模型层卸载到
+GPU。桌面状态栏和 `/api/health` 会显示实际后端与加速状态；若 Metal 不可用，会
+明确显示 CPU 降级，而不是静默伪装成 GPU 模式。
 
 如需强制重装带 Metal 的 llama.cpp Python 包：
 
@@ -40,6 +46,16 @@ ASR 默认会在 Apple Silicon 上走 `faster-whisper / CTranslate2 + CPU int8`�
 CMAKE_ARGS="-DGGML_METAL=on" FORCE_CMAKE=1 \
   .venv-macos/bin/python -m pip install --no-cache-dir llama-cpp-python
 ```
+
+正式构建使用带哈希锁定的 macOS 依赖和 Metal 编译步骤：
+
+```bash
+./scripts/build_macos_app.sh
+```
+
+不要在 `.env` 的通用 `TRANS_ASR_MODEL_ID` 中填入另一种后端的模型。指定 Qwen3
+权重时使用 `TRANS_ASR_QWEN3_MODEL_ID`；当前默认值已经适合大多数 Apple Silicon
+设备。
 
 ## 系统声音输入
 
@@ -50,7 +66,7 @@ CMAKE_ARGS="-DGGML_METAL=on" FORCE_CMAKE=1 \
 
 ```bash
 ./start.sh --check-only --no-install
-.venv-macos/bin/python test_new_features.py
+.venv-macos/bin/python -m pytest
 ```
 
 如果需要重新下载翻译模型：

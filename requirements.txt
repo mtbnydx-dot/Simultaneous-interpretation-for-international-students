@@ -1,26 +1,29 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-websockets>=14.0
-huggingface-hub>=0.26.0
-numpy>=1.26.0
-scipy>=1.11.0
-sounddevice>=0.5.0
-pydantic>=2.10.0
-pydantic-settings>=2.7.0
-torch>=2.2.0
-torchaudio>=2.2.0
+fastapi==0.136.1
+uvicorn[standard]==0.46.0
+websockets==15.0.1
+huggingface-hub==1.26.1
+numpy==2.3.5
+scipy==1.17.1
+pydantic==2.12.3
+pydantic-settings==2.14.0
+psutil==7.2.2
+# Silero VAD 走 ONNX Runtime（不再需要 PyTorch）
+onnxruntime==1.25.0
 
 # ── ASR ─────────────────────────────────────────────────────
-faster-whisper>=1.1.0
-ctranslate2>=4.5.0
-# transformers + sentencepiece + accelerate 用于高精度 transformers-whisper 回退/可选后端
-transformers>=4.40.0
-sentencepiece>=0.2.0
-accelerate>=0.30.0
+# Apple Silicon 默认 ASR：Qwen3-ASR（Apache-2.0，52 语言/方言），经 mlx-audio 运行。
+# mlx-community 提供 4bit/5bit/6bit/8bit/bf16 全套量化，默认用 8bit。
+# 会带上 transformers + mlx-lm（tokenizer / 特征提取），但不需要 torch。
+mlx-audio==0.4.7; sys_platform == "darwin" and platform_machine == "arm64"
+# macOS 分发版只保留 Qwen3-ASR。Transformers 中供 Qwen 使用的
+# WhisperFeatureExtractor 只是特征预处理代码，不包含 Whisper 推理模型。
+# 非 Apple Silicon 源码环境仍可使用 CT2 作为跨平台后端。
+faster-whisper==1.2.1; sys_platform != "darwin" or platform_machine != "arm64"
+ctranslate2==4.7.1; sys_platform != "darwin" or platform_machine != "arm64"
 
-# ── MT (HY-MT1.5 GGUF via llama-cpp-python) ─────────────────
+# ── MT (Hy-MT2 GGUF via llama-cpp-python) ───────────────────
 # 默认通过 pip 安装；macOS 如需 Metal 会在设备检测时确认是否支持 GPU offload：
-llama-cpp-python>=0.3.0
+llama-cpp-python==0.3.20
 #
 # 若需 GPU 加速（必须从源码重编译）：
 #   NVIDIA CUDA:
@@ -32,7 +35,15 @@ llama-cpp-python>=0.3.0
 #   通用 GPU via Vulkan：
 #     CMAKE_ARGS="-DGGML_VULKAN=ON" pip install --force-reinstall --no-cache-dir llama-cpp-python
 
-# Silero VAD —— 通过 torch.hub 在首次使用时下载（依赖 torch/torchaudio）
+# Silero VAD —— ONNX 权重 (~2.3MB) 在首次使用时按 TRANS_VAD_SILERO_REPO 的
+# tag 下载，经 onnxruntime 推理。不再需要 torch/torchaudio。
+
+# ── 可选：transformers ASR 后端 / NVIDIA CUDA ────────────────
+# macOS Apple Silicon 完全用不到下面这些（ASR=Qwen3/MLX、MT=llama.cpp Metal、
+# VAD=onnxruntime），而 torch 会多占约 180MB 常驻内存、1 秒启动时间、244MB 打包体积，
+# 所以已从默认依赖和 macOS 打包中移除。
+# 需要 transformers-whisper / transformers-distil 后端，或在 NVIDIA 上做 CUDA 探测时再装：
+#   pip install torch torchaudio transformers sentencepiece accelerate
 
 # ── 可选：Intel OpenVINO ASR 加速 ───────────────────────────
 # 若使用 Intel iGPU/NPU 跑 ASR 后端，取消下面两行注释：
@@ -42,6 +53,3 @@ llama-cpp-python>=0.3.0
 # ── 可选：旧 NLLB / opus-mt MT 回退 ─────────────────────────
 # model_download.py 仅在 mt_model_id 不是 .gguf 时才会用到 sacremoses
 # sacremoses>=0.1.1
-
-# PyTorch/torchaudio 已作为基础依赖安装；如需 NVIDIA CUDA 专用 wheel，可按需重装：
-#   pip install --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu124

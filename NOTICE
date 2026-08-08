@@ -1,0 +1,7 @@
+TransLive
+Copyright 2026 TransLive contributors
+
+This product includes or interoperates with third-party software and model
+artifacts. Their licenses and source locations are listed in
+MODEL_LICENSES.md. Model weights are not included in the source repository or
+the default distribution archive and are downloaded separately by users.

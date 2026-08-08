@@ -1,0 +1,2 @@
+llama-cpp-python==0.3.20 \
+    --hash=sha256:70f01b7d915d31c617dc66610a332cb2d51cde84c8b152d09a352206323616f5

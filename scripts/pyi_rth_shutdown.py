@@ -21,6 +21,10 @@ if sys.platform == "darwin":
                 handler.close()
             except Exception:
                 pass
-        os._exit(0)
+        try:
+            code = int(os.environ.get("TRANS_EXIT_CODE", "0"))
+        except ValueError:
+            code = 0
+        os._exit(code)
 
     atexit.register(_flush_then_exit)

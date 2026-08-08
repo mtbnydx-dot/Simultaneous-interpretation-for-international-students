@@ -8,7 +8,9 @@ RTF > 1.0 表示处理速度跟不上，需要更轻的模型或更快的硬件�
 
 import time
 import logging
-from dataclasses import dataclass, field
+import threading
+from collections import deque
+from dataclasses import dataclass
 
 from app.core.config import settings
 
@@ -50,8 +52,8 @@ class PerfMonitor:
     """性能监控器"""
 
     def __init__(self, max_history: int = 100):
-        self._history: list[SegmentMetrics] = []
-        self._max_history = max_history
+        self._history: deque[SegmentMetrics] = deque(maxlen=max(1, max_history))
+        self._lock = threading.Lock()
 
     def create_timer(self) -> "PerfTimer":
         """创建性能计时器"""
@@ -62,21 +64,22 @@ class PerfMonitor:
         if settings.perf_log_enabled:
             metrics.log()
 
-        self._history.append(metrics)
-        if len(self._history) > self._max_history:
-            self._history = self._history[-self._max_history:]
+        with self._lock:
+            self._history.append(metrics)
 
     def get_stats(self) -> dict:
         """返回最近 N 个片段的汇总统计"""
-        if not self._history:
+        with self._lock:
+            history = tuple(self._history)
+        if not history:
             return {}
 
-        rtfs = [m.rtf for m in self._history if m.audio_duration > 0]
-        asr_times = [m.asr_time for m in self._history]
-        mt_times = [m.mt_time for m in self._history]
+        rtfs = [m.rtf for m in history if m.audio_duration > 0]
+        asr_times = [m.asr_time for m in history]
+        mt_times = [m.mt_time for m in history]
 
         return {
-            "segments": len(self._history),
+            "segments": len(history),
             "avg_rtf": sum(rtfs) / len(rtfs) if rtfs else 0,
             "max_rtf": max(rtfs) if rtfs else 0,
             "min_rtf": min(rtfs) if rtfs else 0,
@@ -86,7 +89,8 @@ class PerfMonitor:
 
     def clear(self) -> None:
         """清空历史记录"""
-        self._history.clear()
+        with self._lock:
+            self._history.clear()
 
 
 class PerfTimer:
@@ -116,12 +120,28 @@ class PerfTimer:
         self._metrics.asr_time = now - self._t_last
         self._t_last = now
 
-    def mark_mt_done(self) -> None:
+    def mark_mt_done(self, mt_time: float | None = None) -> None:
         """标记 MT 完成并记录总时间"""
         now = time.perf_counter()
-        self._metrics.mt_time = now - self._t_last
+        self._metrics.mt_time = max(0.0, mt_time) if mt_time is not None else now - self._t_last
         self._metrics.total_time = now - self._t_start
         self._monitor.record(self._metrics)
+
+    @property
+    def asr_time(self) -> float:
+        return self._metrics.asr_time
+
+    @property
+    def mt_time(self) -> float:
+        return self._metrics.mt_time
+
+    @property
+    def total_time(self) -> float:
+        return self._metrics.total_time
+
+    @property
+    def rtf(self) -> float:
+        return self._metrics.rtf
 
 
 # 模块级单例

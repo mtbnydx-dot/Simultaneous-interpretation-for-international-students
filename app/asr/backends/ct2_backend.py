@@ -19,11 +19,14 @@ class CT2Backend(ASRBackend):
 
     def __init__(self):
         self._model = None
+        self._model_id: str | None = None
 
     def load(self, device: str, compute_type: str, model_id: str | None = None) -> None:
         from faster_whisper import WhisperModel
 
         raw = model_id or settings.asr_model_id or settings.asr_model_size
+        if "mlx-community/whisper-large-v3-turbo" in raw:
+            raw = "large-v3-turbo"
 
         # 将 HF 模型 ID 转换为 faster-whisper 的 size 字符串
         # 例如 "distil-whisper/distil-medium.en" → "distil-medium.en"
@@ -33,6 +36,7 @@ class CT2Backend(ASRBackend):
             if raw.startswith("whisper-"):
                 raw = raw[len("whisper-"):]
         model_size = raw
+        self._model_id = model_size
 
         logger.info("Loading CT2 model: %s (device=%s, compute_type=%s)",
                      model_size, device, compute_type)
@@ -89,7 +93,12 @@ class CT2Backend(ASRBackend):
 
     def unload(self) -> None:
         self._model = None
+        self._model_id = None
 
     @property
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    @property
+    def model_id(self) -> str | None:
+        return self._model_id

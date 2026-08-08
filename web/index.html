@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TransLive 0.88 (test) · AI 同声传译</title>
-    <link rel="stylesheet" href="/assets/style.css">
+    <title>TransLive · AI 同声传译</title>
+    <link rel="stylesheet" href="/assets/style.css?v=1.1">
 </head>
 <body>
     <div id="app">
@@ -12,8 +12,8 @@
             <div class="brand">
                 <h1>TransLive</h1>
                 <span class="tagline">AI 同声传译</span>
-                <span class="version-pill" id="versionPill">v0.88 (test)</span>
-                <span class="credit-line" id="creditLine">薛定谔的帮你偶</span>
+                <span class="version-pill" id="versionPill">...</span>
+                <span class="credit-line" id="creditLine"></span>
             </div>
             <div class="badges">
                 <span class="badge" id="asrBadge" title="ASR 模型">ASR <em>—</em></span>
@@ -26,6 +26,7 @@
             <div class="control-group">
                 <label>源语言</label>
                 <select id="sourceLang">
+                    <option value="auto">自动检测</option>
                     <option value="en" selected>English</option>
                     <option value="zh">中文</option>
                     <option value="ja">日本語</option>
@@ -100,6 +101,53 @@
             </div>
         </section>
 
+        <section class="history-section">
+            <div class="history-panel" id="historyPanel" hidden>
+                <div class="history-header">
+                    <div>
+                        <span>历史记录</span>
+                        <span class="muted" id="historyStatus">尚未读取</span>
+                    </div>
+                    <div class="history-actions">
+                        <input id="historySearch" class="history-search" type="search" placeholder="搜索历史" autocomplete="off" aria-label="搜索历史记录">
+                        <select id="historyStateFilter" class="history-filter" title="历史状态" aria-label="历史状态">
+                            <option value="all">全部</option>
+                            <option value="final">完成</option>
+                            <option value="error">错误</option>
+                        </select>
+                        <button id="historyRefreshBtn" class="btn-secondary">刷新</button>
+                        <button id="historyCopyFilteredBtn" class="btn-secondary">复制筛选</button>
+                        <button id="historyExportFilteredBtn" class="btn-secondary">导出筛选</button>
+                        <button id="historyLoadBtn" class="btn-primary history-load-btn">载入</button>
+                        <button id="historyClearSavedBtn" class="btn-secondary history-danger-btn">清空保存</button>
+                    </div>
+                </div>
+                <div class="history-list" id="historyList">
+                    <div class="history-empty">暂无历史记录</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="fulltext-section">
+            <div class="fulltext-panel" id="fullTextPanel" hidden>
+                <div class="fulltext-header">
+                    <div>
+                        <span>全文翻译</span>
+                        <span class="muted" id="fullTextStatus">将本次全部原文合并后整体翻译</span>
+                    </div>
+                    <div class="fulltext-actions">
+                        <button id="fullTextGenerateBtn" class="btn-primary fulltext-generate-btn">生成全文翻译</button>
+                        <button id="fullTextCopyBtn" class="btn-secondary">复制</button>
+                        <button id="fullTextExportBtn" class="btn-secondary">导出 .txt</button>
+                        <button id="fullTextCloseBtn" class="btn-secondary">关闭</button>
+                    </div>
+                </div>
+                <div class="fulltext-body" id="fullTextBody">
+                    <div class="fulltext-empty">当前没有全文翻译。点击「生成全文翻译」后，会把本次所有原文合并成一篇内容再统一翻译。</div>
+                </div>
+            </div>
+        </section>
+
         <section class="meter-row">
             <div class="meter" id="meter" aria-hidden="true">
                 <div class="meter-bar" id="meterBar"></div>
@@ -115,7 +163,7 @@
             </div>
         </main>
 
-        <button class="jump-pill" id="jumpPill" hidden>↓ 跳到最新</button>
+        <button class="jump-pill" id="jumpPill" hidden>↑ 跳到最新</button>
 
         <footer>
             <div class="footer-left">
@@ -123,11 +171,20 @@
                 <button id="copyBtn"   class="btn-secondary">复制全部</button>
                 <button id="exportTxt" class="btn-secondary">导出 .txt</button>
                 <button id="exportSrt" class="btn-secondary">导出 .srt</button>
-                <button id="modelDownloadBtn" class="btn-secondary">下载模型</button>
+                <button id="fullTextToggle" class="btn-secondary">全文翻译</button>
+                <button id="historyToggle" class="btn-secondary">历史记录</button>
+                <button id="modelDownloadBtn" class="btn-secondary">加载/下载模型</button>
+                <button id="modelUnloadBtn" class="btn-secondary">释放内存</button>
                 <div class="audio-source-controls">
                     <select id="audioSource" class="footer-select audio-source-select" title="音频输入" aria-label="音频输入">
                         <option value="system" selected>系统音频</option>
                         <option value="mic">麦克风</option>
+                    </select>
+                    <span id="audioSourceStatus" class="audio-source-status warn" title="系统音频状态">检测中</span>
+                    <select id="latencyMode" class="footer-select latency-mode-select" title="识别延迟模式" aria-label="识别延迟模式">
+                        <option value="low">低延迟</option>
+                        <option value="balanced" selected>均衡</option>
+                        <option value="stable">稳妥</option>
                     </select>
                 </div>
                 <div class="subtitle-controls">
@@ -136,13 +193,32 @@
                         <option value="translation">仅译文</option>
                     </select>
                     <button id="subtitleWindowBtn" class="btn-secondary">字幕窗</button>
+                    <label class="toggle" id="clickThroughWrap" hidden>
+                        <input type="checkbox" id="clickThrough">
+                        <span title="开启后点击字幕正文会穿透到下面的应用；字幕窗的工具栏和右下角缩放手柄仍然可以正常操作">点击穿透</span>
+                    </label>
                 </div>
                 <label class="toggle">
                     <input type="checkbox" id="autoScroll" checked>
                     <span>自动滚动</span>
                 </label>
+                <label class="toggle history-toggle">
+                    <input type="checkbox" id="persistHistory" checked>
+                    <span>保存记录</span>
+                </label>
+                <label class="toggle auto-unload-toggle" title="空闲一段时间后自动释放模型内存">
+                    <input type="checkbox" id="autoUnload" checked>
+                    <span>空闲释放</span>
+                </label>
+                <label class="toggle streaming-preview-toggle" title="滚动显示尚未定稿的识别文本">
+                    <input type="checkbox" id="streamingPreview">
+                    <span>流式预览 <small>实验</small></span>
+                </label>
             </div>
-            <div class="footer-right" id="stats">—</div>
+            <div class="footer-right">
+                <span class="history-info" id="historyInfo">记录 0</span>
+                <span id="stats">—</span>
+            </div>
         </footer>
 
         <div class="hotkeys" aria-hidden="true">空格 ⇄ 开始 / 停止</div>
@@ -151,14 +227,14 @@
             <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modelPromptTitle">
                 <button id="modelPromptClose" class="modal-close btn-icon-only" title="关闭" aria-label="关闭">×</button>
                 <div class="modal-kicker">首次使用</div>
-                <h2 id="modelPromptTitle">下载翻译模型</h2>
+                <h2 id="modelPromptTitle">加载/下载模型</h2>
                 <p id="modelPromptText">
-                    安装包不内置大模型。需要下载 HY-MT1.5 翻译模型后才能开始同传。
+                    安装包不内置大模型。需要加载或下载语音识别和翻译模型后才能开始同传。
                 </p>
-                <div class="model-file" id="modelPromptModel">HY-MT1.5-1.8B-Q4_K_M.gguf</div>
+                <div class="model-file" id="modelPromptModel">语音识别模型 / 翻译模型</div>
                 <div class="modal-actions">
                     <button id="modelPromptLater" class="btn-secondary">稍后</button>
-                    <button id="modelPromptDownload" class="btn-primary">下载模型</button>
+                    <button id="modelPromptDownload" class="btn-primary">加载/下载模型</button>
                 </div>
             </section>
         </div>
@@ -182,6 +258,6 @@
         </article>
     </template>
 
-    <script src="/assets/app.js"></script>
+    <script src="/assets/app.js?v=1.1"></script>
 </body>
 </html>

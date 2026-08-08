@@ -1,6 +1,7 @@
-"""
-测试新功能的脚本。
-验证 Distil-Whisper 后端、音频预处理、性能监控等功能。
+"""手动诊断脚本，不参与 pytest 回归套件。
+
+自动化测试位于 ``tests/``；这里保留交互式输出，便于本地排查旧后端、音频预处理
+和性能监控状态。
 """
 
 import sys
@@ -101,21 +102,21 @@ def test_backend_registry():
 
     # 测试 CT2 后端
     try:
-        backend = create_backend("ct2")
+        create_backend("ct2")
         print("  [OK] CT2 backend created")
     except Exception as e:
         print(f"  [FAIL] CT2 backend failed: {e}")
 
     # 测试 OpenVINO 后端
     try:
-        backend = create_backend("openvino")
+        create_backend("openvino")
         print("  [OK] OpenVINO backend created")
     except Exception as e:
         print(f"  [FAIL] OpenVINO backend failed: {e}")
 
     # 测试 Transformers 后端
     try:
-        backend = create_backend("transformers-distil")
+        create_backend("transformers-distil")
         print("  [OK] Transformers backend created")
     except Exception as e:
         print(f"  [FAIL] Transformers backend failed: {e}")

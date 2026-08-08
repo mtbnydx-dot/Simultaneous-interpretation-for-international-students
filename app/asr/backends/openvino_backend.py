@@ -26,6 +26,7 @@ class OpenVINOBackend(ASRBackend):
     def __init__(self):
         self._model = None
         self._processor = None
+        self._model_id: str | None = None
 
     def load(self, device: str, compute_type: str, model_id: str | None = None) -> None:
         from optimum.intel import OVModelForSpeechSeq2Seq
@@ -35,6 +36,7 @@ class OpenVINOBackend(ASRBackend):
         # 兼容旧用法：纯 size 字符串自动展开为 openai/whisper-{size}
         raw = model_id or settings.asr_model_id or settings.asr_model_size
         model_id_str = raw if "/" in raw else f"openai/whisper-{raw}"
+        self._model_id = model_id_str
 
         device_map = {
             "intel_gpu": "GPU", "gpu": "GPU",
@@ -62,8 +64,6 @@ class OpenVINOBackend(ASRBackend):
     def transcribe(self, audio: np.ndarray, language: str | None = None) -> TranscribeResult:
         if self._model is None or self._processor is None:
             raise RuntimeError("OpenVINO model not loaded")
-
-        import torch
 
         t0 = time.perf_counter()
         audio_duration = len(audio) / settings.sample_rate
@@ -115,7 +115,12 @@ class OpenVINOBackend(ASRBackend):
     def unload(self) -> None:
         self._model = None
         self._processor = None
+        self._model_id = None
 
     @property
     def is_loaded(self) -> bool:
         return self._model is not None
+
+    @property
+    def model_id(self) -> str | None:
+        return self._model_id

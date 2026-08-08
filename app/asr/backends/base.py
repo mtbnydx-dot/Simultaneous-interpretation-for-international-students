@@ -5,6 +5,7 @@ ASR 后端抽象基类。
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Callable
 import numpy as np
 
 
@@ -59,6 +60,15 @@ class ASRBackend(ABC):
             TranscribeResult with text and metadata
         """
         ...
+
+    def transcribe_stream(
+        self,
+        audio: np.ndarray,
+        language: str | None,
+        on_partial: Callable[[str, str | None], None],
+    ) -> TranscribeResult:
+        """Run one authoritative decode, optionally reporting partial text."""
+        return self.transcribe(audio, language)
 
     @abstractmethod
     def unload(self) -> None:

@@ -5,7 +5,7 @@ import contextlib
 import ctypes
 import json
 import logging
-import queue
+import platform
 import sys
 import threading
 import time
@@ -14,6 +14,9 @@ from typing import Any, Callable
 from urllib.parse import urlparse, urlunparse
 
 import numpy as np
+
+from app.core.config import settings
+from app.core.languages import normalize_language_code, normalize_source_language
 
 logger = logging.getLogger(__name__)
 
@@ -32,16 +35,47 @@ def _error_message(error: Any) -> str:
 
 
 def is_native_system_audio_available() -> tuple[bool, str]:
-    if sys.platform != "darwin":
+    diagnostics = native_system_audio_diagnostics()
+    if not diagnostics["supported_platform"]:
         return False, "仅 macOS 桌面版支持原生系统音频采集"
-    try:
-        import ScreenCaptureKit  # noqa: F401
-        import CoreMedia  # noqa: F401
-        import CoreAudio  # noqa: F401
-        import objc  # noqa: F401
-    except Exception as exc:
-        return False, f"缺少 macOS 原生音频依赖: {exc}"
+    missing = [name for name, ok in diagnostics["dependencies"].items() if not ok]
+    if missing:
+        return False, "缺少 macOS 原生音频依赖: " + ", ".join(missing)
+    permission = diagnostics.get("screen_recording_permission")
+    if permission is False:
+        return True, "ScreenCaptureKit 可用，但系统可能还需要授予屏幕录制权限"
     return True, "ScreenCaptureKit 可用"
+
+
+def native_system_audio_diagnostics() -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {
+        "supported_platform": sys.platform == "darwin",
+        "platform": sys.platform,
+        "macos_version": platform.mac_ver()[0] if sys.platform == "darwin" else None,
+        "machine": platform.machine(),
+        "dependencies": {},
+        "screen_recording_permission": None,
+        "screen_recording_permission_error": None,
+    }
+    if sys.platform != "darwin":
+        return diagnostics
+
+    for module_name in ("ScreenCaptureKit", "CoreMedia", "CoreAudio", "Quartz", "objc"):
+        try:
+            __import__(module_name)
+            diagnostics["dependencies"][module_name] = True
+        except Exception as exc:
+            diagnostics["dependencies"][module_name] = False
+            diagnostics[f"{module_name}_error"] = str(exc)
+
+    try:
+        from Quartz import CGPreflightScreenCaptureAccess
+
+        diagnostics["screen_recording_permission"] = bool(CGPreflightScreenCaptureAccess())
+    except Exception as exc:
+        diagnostics["screen_recording_permission_error"] = str(exc)
+
+    return diagnostics
 
 
 def _dispatch_queue(label: bytes):
@@ -177,8 +211,19 @@ class ScreenCaptureKitAudioCapture:
                 config.setExcludesCurrentProcessAudio_(True)
             if hasattr(config, "setSampleRate_"):
                 config.setSampleRate_(TARGET_SAMPLE_RATE)
-            config.setWidth_(max(2, min(int(display.width()), 1280)))
-            config.setHeight_(max(2, min(int(display.height()), 720)))
+            # 只注册音频输出，不显示画面。把隐含的视频流压到最小规格，避免采集
+            # 系统声音时仍让 WindowServer/Metal 搬运一份 720p 屏幕帧。
+            config.setWidth_(2)
+            config.setHeight_(2)
+            if hasattr(config, "setShowsCursor_"):
+                config.setShowsCursor_(False)
+            if hasattr(config, "setMinimumFrameInterval_"):
+                try:
+                    import CoreMedia as CM
+
+                    config.setMinimumFrameInterval_(CM.CMTimeMake(1, 1))
+                except Exception:
+                    logger.debug("Unable to reduce ScreenCaptureKit video frame rate", exc_info=True)
             config.setQueueDepth_(3)
 
             self._stream = S.SCStream.alloc().initWithFilter_configuration_delegate_(filter_obj, config, None)
@@ -274,8 +319,11 @@ def _sample_buffer_to_int16(sample_buffer: Any) -> bytes:
         return b""
     if fmt.sample_rate != TARGET_SAMPLE_RATE:
         audio = _resample(audio, fmt.sample_rate, TARGET_SAMPLE_RATE)
-    audio = np.clip(audio, -1.0, 1.0)
-    return (audio * 32767.0).astype(np.int16).tobytes()
+    if not audio.flags.writeable:
+        audio = audio.copy()
+    np.clip(audio, -1.0, 1.0, out=audio)
+    audio *= 32767.0
+    return audio.astype(np.int16).tobytes()
 
 
 def _decode_pcm(raw: bytes, fmt: _AudioFormat) -> np.ndarray:
@@ -326,25 +374,33 @@ def _resample(audio: np.ndarray, source_rate: int, target_rate: int) -> np.ndarr
 
 
 class NativeSystemAudioBridge:
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, api_token: str):
         self.base_url = base_url.rstrip("/")
+        self.api_token = api_token
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._websocket: Any | None = None
         self._stop_event = threading.Event()
         self._started_event = threading.Event()
+        self._server_stopped_event = threading.Event()
         self._error: str | None = None
         self._capture: ScreenCaptureKitAudioCapture | None = None
+        self._dropped_chunks = 0
+        self._graceful_stop = True
 
     def available(self) -> dict[str, Any]:
         ok, reason = is_native_system_audio_available()
-        return {"ok": ok, "reason": reason}
+        return {"ok": ok, "reason": reason, "diagnostics": native_system_audio_diagnostics()}
 
     def status(self) -> dict[str, Any]:
         with self._lock:
             running = self._thread is not None and self._thread.is_alive() and self._error is None
-            return {"running": running, "error": self._error}
+            return {
+                "running": running,
+                "error": self._error,
+                "dropped_chunks": self._dropped_chunks,
+            }
 
     def start(self, config: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
@@ -352,7 +408,10 @@ class NativeSystemAudioBridge:
                 return {"ok": True, "running": True, "reused": True}
             self._stop_event.clear()
             self._started_event.clear()
+            self._server_stopped_event.clear()
             self._error = None
+            self._dropped_chunks = 0
+            self._graceful_stop = True
             self._thread = threading.Thread(
                 target=self._thread_main,
                 args=(dict(config or {}),),
@@ -387,7 +446,8 @@ class NativeSystemAudioBridge:
             logger.exception("Failed to update native audio session config")
             return {"ok": False, "error": str(exc)}
 
-    def stop(self) -> dict[str, Any]:
+    def stop(self, graceful: bool = True) -> dict[str, Any]:
+        self._graceful_stop = bool(graceful)
         self._stop_event.set()
         with self._lock:
             capture = self._capture
@@ -395,19 +455,29 @@ class NativeSystemAudioBridge:
             loop = self._loop
             websocket = self._websocket
 
-        if loop is not None and websocket is not None:
+        if capture is not None:
+            try:
+                capture.stop()
+            except Exception:
+                logger.exception("Failed to stop native system audio capture")
+
+        if not graceful and loop is not None and websocket is not None:
             try:
                 future = asyncio.run_coroutine_threadsafe(websocket.close(), loop)
                 future.result(timeout=1.5)
             except Exception:
                 pass
-        elif capture is not None:
-            capture.stop()
 
         if thread is not None and thread.is_alive():
-            thread.join(timeout=4.0)
+            thread.join(timeout=max(4.0, float(settings.session_drain_timeout_s) + 2.0))
             if thread.is_alive():
                 logger.warning("Native system audio thread did not stop within timeout")
+                if loop is not None and websocket is not None:
+                    try:
+                        future = asyncio.run_coroutine_threadsafe(websocket.close(), loop)
+                        future.result(timeout=1.5)
+                    except Exception:
+                        pass
         with self._lock:
             if self._thread is thread:
                 self._thread = None
@@ -432,27 +502,38 @@ class NativeSystemAudioBridge:
     async def _run(self, config: dict[str, Any]) -> None:
         import websockets
 
-        audio_queue: queue.Queue[bytes] = queue.Queue(maxsize=MAX_AUDIO_QUEUE)
+        loop = asyncio.get_running_loop()
+        audio_queue: asyncio.Queue[bytes] = asyncio.Queue(maxsize=MAX_AUDIO_QUEUE)
+
+        def enqueue_audio(chunk: bytes) -> None:
+            if self._stop_event.is_set():
+                return
+            if audio_queue.full():
+                try:
+                    audio_queue.get_nowait()
+                except asyncio.QueueEmpty:
+                    pass
+                with self._lock:
+                    self._dropped_chunks += 1
+            try:
+                audio_queue.put_nowait(chunk)
+            except asyncio.QueueFull:
+                pass
 
         def on_audio(chunk: bytes) -> None:
             if self._stop_event.is_set():
                 return
             try:
-                audio_queue.put_nowait(chunk)
-            except queue.Full:
-                try:
-                    audio_queue.get_nowait()
-                except queue.Empty:
-                    pass
-                try:
-                    audio_queue.put_nowait(chunk)
-                except queue.Full:
-                    pass
+                loop.call_soon_threadsafe(enqueue_audio, chunk)
+            except RuntimeError:
+                # 退出过程中事件循环可能已经关闭。
+                pass
 
         ws_url = self._stream_ws_url()
-        async with websockets.connect(ws_url, max_size=None) as websocket:
+        protocols = ["translive", f"translive-auth.{self.api_token}"]
+        async with websockets.connect(ws_url, max_size=None, subprotocols=protocols) as websocket:
             with self._lock:
-                self._loop = asyncio.get_running_loop()
+                self._loop = loop
                 self._websocket = websocket
             await self._send_session_config(websocket, config)
 
@@ -465,16 +546,24 @@ class NativeSystemAudioBridge:
             try:
                 while not self._stop_event.is_set():
                     try:
-                        chunk = await asyncio.to_thread(audio_queue.get, True, 0.25)
-                    except queue.Empty:
+                        chunk = await asyncio.wait_for(audio_queue.get(), timeout=0.25)
+                    except asyncio.TimeoutError:
                         continue
                     await websocket.send(chunk)
             finally:
+                capture.stop()
+                self._capture = None
+                if self._graceful_stop:
+                    try:
+                        await websocket.send(json.dumps({"type": "stop"}))
+                        deadline = time.monotonic() + max(1.0, float(settings.session_drain_timeout_s))
+                        while not self._server_stopped_event.is_set() and time.monotonic() < deadline:
+                            await asyncio.sleep(0.05)
+                    except Exception:
+                        logger.debug("Native audio session stop handshake failed", exc_info=True)
                 reader.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await reader
-                capture.stop()
-                self._capture = None
                 with self._lock:
                     self._websocket = None
                     self._loop = None
@@ -482,17 +571,28 @@ class NativeSystemAudioBridge:
     async def _send_session_config(self, websocket: Any, config: dict[str, Any]) -> None:
         await websocket.send(json.dumps({
             "type": "config",
-            "source_lang": config.get("source_lang") or "en",
-            "target_lang": config.get("target_lang") or "zh",
+            "source_lang": normalize_source_language(config.get("source_lang"), "en"),
+            "target_lang": normalize_language_code(config.get("target_lang"), "zh"),
+            "latency_mode": config.get("latency_mode") or "balanced",
+            "persist_history": bool(config.get("persist_history", True)),
+            "streaming_preview": bool(config.get("streaming_preview", False)),
         }))
         glossary = config.get("glossary")
         if isinstance(glossary, dict):
             await websocket.send(json.dumps({"type": "glossary", "glossary": glossary}))
 
     async def _drain_messages(self, websocket: Any) -> None:
-        while not self._stop_event.is_set():
+        while True:
             try:
-                await websocket.recv()
+                raw = await websocket.recv()
+                if isinstance(raw, str):
+                    try:
+                        payload = json.loads(raw)
+                    except json.JSONDecodeError:
+                        continue
+                    if payload.get("type") == "session_stopped":
+                        self._server_stopped_event.set()
+                        return
             except asyncio.CancelledError:
                 raise
             except Exception:

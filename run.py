@@ -14,46 +14,51 @@ TransLive 一键启动器
 from __future__ import annotations
 
 import os
+import secrets
 import sys
+import argparse
+import importlib
+import importlib.util
+import subprocess
+import threading
+import time
+import webbrowser
 from pathlib import Path
+
+from app.version import APP_CREDIT, APP_VERSION
 
 # ── 必须最早设置，防止 Rich/NNCF/HF 在 Windows GBK 控制台写入崩溃 ──
 os.environ.setdefault("NNCF_PROGRESS_BAR", "false")
 os.environ.setdefault("RICH_FORCE_TERMINAL", "false")
 os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
+os.environ.setdefault("TRANS_LOCAL_API_TOKEN", secrets.token_urlsafe(32))
+os.environ.setdefault("TRANS_INSTANCE_ID", secrets.token_hex(16))
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 os.chdir(SCRIPT_DIR)
 sys.path.insert(0, str(SCRIPT_DIR))
 
-import argparse
-import importlib
-import importlib.util
-import shutil
-import subprocess
-import threading
-import time
-import webbrowser
-
 # (import_name, pip_spec, label)
 REQUIRED_PACKAGES: list[tuple[str, str, str]] = [
-    ("fastapi",           "fastapi>=0.115.0",          "FastAPI"),
-    ("uvicorn",           "uvicorn[standard]>=0.34.0", "uvicorn"),
-    ("websockets",        "websockets>=14.0",          "websockets"),
-    ("huggingface_hub",   "huggingface-hub>=0.26.0",   "huggingface-hub"),
-    ("numpy",             "numpy>=1.26.0",             "numpy"),
-    ("scipy",             "scipy>=1.11.0",             "scipy"),
-    ("sounddevice",       "sounddevice>=0.5.0",        "sounddevice"),
-    ("pydantic_settings", "pydantic-settings>=2.7.0",  "pydantic-settings"),
-    ("torch",             "torch>=2.2.0",              "PyTorch"),
-    ("torchaudio",        "torchaudio>=2.2.0",         "torchaudio"),
-    ("transformers",      "transformers>=4.40.0",      "transformers"),
-    ("sentencepiece",     "sentencepiece>=0.2.0",      "sentencepiece"),
-    ("accelerate",        "accelerate>=0.30.0",        "accelerate"),
-    ("faster_whisper",    "faster-whisper>=1.1.0",     "faster-whisper"),
-    ("llama_cpp",         "llama-cpp-python>=0.3.0",   "llama-cpp-python"),
+    ("fastapi",           "fastapi==0.136.1",          "FastAPI"),
+    ("uvicorn",           "uvicorn[standard]==0.46.0", "uvicorn"),
+    ("websockets",        "websockets==15.0.1",        "websockets"),
+    ("huggingface_hub",   "huggingface-hub==1.26.1",   "huggingface-hub"),
+    ("numpy",             "numpy==2.3.5",              "numpy"),
+    ("scipy",             "scipy==1.17.1",             "scipy"),
+    ("pydantic_settings", "pydantic-settings==2.14.0", "pydantic-settings"),
+    ("onnxruntime",       "onnxruntime==1.25.0",       "ONNX Runtime"),
+    ("psutil",            "psutil==7.2.2",             "psutil"),
+    ("faster_whisper",    "faster-whisper==1.2.1",     "faster-whisper"),
+    ("llama_cpp",         "llama-cpp-python==0.3.20",  "llama-cpp-python"),
 ]
+
+if sys.platform == "darwin" and os.uname().machine == "arm64":
+    REQUIRED_PACKAGES.extend([
+        ("mlx_audio", "mlx-audio==0.4.7", "mlx-audio"),
+        ("mlx_whisper", "mlx-whisper==0.4.3", "mlx-whisper"),
+    ])
 
 OPTIONAL_PACKAGES: list[tuple[str, str]] = [
     ("openvino",  "OpenVINO (Intel iGPU/NPU ASR 加速)"),
@@ -62,7 +67,7 @@ OPTIONAL_PACKAGES: list[tuple[str, str]] = [
 BANNER = (
     "+------------------------------------------------------------+\n"
     "|                  TransLive · AI 同声传译                   |\n"
-    "|                 v0.88 (test) · 薛定谔的帮你偶              |\n"
+    f"|                 {APP_VERSION} · {APP_CREDIT}                     |\n"
     "|                    一键启动 / 自动配置                     |\n"
     "+------------------------------------------------------------+"
 )
@@ -204,7 +209,7 @@ def stage_detect_models() -> None:
         size_mb = target.stat().st_size / (1024 * 1024)
         _print(f"  [OK]   MT  : {target.name}  ({size_mb:.0f} MB)")
     else:
-        _print("  [--]   MT  : HY-MT1.5 GGUF 未找到（服务启动后自动下载约 1.13 GB）")
+        _print("  [--]   MT  : Hy-MT GGUF 未找到（可在启动后的界面中下载）")
     _print("")
 
 
@@ -212,8 +217,9 @@ def stage_detect_models() -> None:
 #  Stage 4: 启动服务 + 自动开浏览器
 # ────────────────────────────────────────────────────────────────────
 
-def _open_browser_when_ready(url: str, health_url: str, max_wait: float = 120.0) -> None:
-    """在后台线程里轮询 /api/health；服务起来后打开浏览器"""
+def _open_browser_when_ready(url: str, ready_url: str, instance_id: str, max_wait: float = 120.0) -> None:
+    """在后台线程里校验本进程的 /api/ready；服务起来后打开浏览器。"""
+    import json
     import urllib.request
     import urllib.error
 
@@ -221,14 +227,15 @@ def _open_browser_when_ready(url: str, health_url: str, max_wait: float = 120.0)
         deadline = time.time() + max_wait
         while time.time() < deadline:
             try:
-                with urllib.request.urlopen(health_url, timeout=1) as resp:
-                    if resp.status == 200:
+                with urllib.request.urlopen(ready_url, timeout=1) as resp:
+                    payload = json.loads(resp.read().decode("utf-8"))
+                    if resp.status == 200 and payload.get("instance_id") == instance_id:
                         try:
                             webbrowser.open(url)
                         except Exception:
                             pass
                         return
-            except (urllib.error.URLError, ConnectionRefusedError, OSError, TimeoutError):
+            except (urllib.error.URLError, ConnectionRefusedError, OSError, TimeoutError, json.JSONDecodeError):
                 pass
             time.sleep(0.4)
         # 兜底：超时也尝试开一次浏览器
@@ -248,8 +255,10 @@ def stage_launch(no_browser: bool = False) -> None:
     host = settings.host
     port = settings.port
     browse_host = "127.0.0.1" if host in ("0.0.0.0", "::", "") else host
-    url = f"http://{browse_host}:{port}/"
-    health = f"http://{browse_host}:{port}/api/health"
+    token = settings.local_api_token
+    instance_id = settings.instance_id
+    url = f"http://{browse_host}:{port}/#token={token}"
+    ready = f"http://{browse_host}:{port}/api/ready"
 
     _print(">> [4/4] 启动服务")
     _print(f"  绑定地址 : http://{host}:{port}")
@@ -264,7 +273,7 @@ def stage_launch(no_browser: bool = False) -> None:
     _print("")
 
     if not no_browser:
-        _open_browser_when_ready(url, health)
+        _open_browser_when_ready(url, ready, instance_id)
 
     uvicorn.run(
         "app.main:app",

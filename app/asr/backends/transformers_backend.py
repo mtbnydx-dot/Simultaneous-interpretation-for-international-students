@@ -5,6 +5,7 @@ HuggingFace Transformers ASR 后端。
 """
 
 import time
+import gc
 import logging
 import numpy as np
 
@@ -40,7 +41,6 @@ class TransformersBackend(ASRBackend):
         self._model_id = None
 
     def load(self, device: str, compute_type: str, model_id: str | None = None) -> None:
-        import torch
         from transformers import (
             AutoModelForSpeechSeq2Seq,
             AutoProcessor,
@@ -106,6 +106,8 @@ class TransformersBackend(ASRBackend):
     def _resolve_model_id(self, model_id: str | None) -> str:
         """解析模型 ID"""
         if model_id:
+            if "mlx-community/whisper-large-v3-turbo" in model_id:
+                return "openai/whisper-large-v3-turbo"
             if "/" not in model_id and not model_id.startswith("distil-"):
                 return f"openai/whisper-{model_id}"
             return model_id
@@ -233,6 +235,18 @@ class TransformersBackend(ASRBackend):
             self._processor = None
 
         if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            try:
+                torch.mps.synchronize()
+            except Exception:
+                pass
+
+        self._model_id = None
+        self._torch_dtype = None
+        gc.collect()
+
+        if torch.cuda.is_available():
             torch.cuda.empty_cache()
         if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
             try:
@@ -243,3 +257,7 @@ class TransformersBackend(ASRBackend):
     @property
     def is_loaded(self) -> bool:
         return self._pipe is not None
+
+    @property
+    def model_id(self) -> str | None:
+        return self._model_id
