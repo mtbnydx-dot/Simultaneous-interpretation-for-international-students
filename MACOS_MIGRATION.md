@@ -1,76 +1,208 @@
-# TransLive macOS 迁移说明
+# macOS 安装、构建与分发
 
-Windows 启动脚本、旧虚拟环境和 Windows 版 llama.cpp 二进制已统一归档到
-`windows_legacy/`。macOS 主流程只使用 `.venv-macos`、`llama-cpp-python`
-和 `dist/TransLive.app`，这些 Windows 文件不会参与运行或打包。
+本文说明 TransLive 当前 macOS 版本的运行边界、开发环境、模型准备、系统权限、签名与公证流程。旧的 Windows 启动脚本保留在 `windows_legacy/`，不参与 macOS App 构建。
 
-当前分发包支持 Apple Silicon 上的 macOS 14.0 及以上版本，包括 macOS 14 和
-macOS 15；MLX 不支持 Intel Mac。ASR 固定为 Qwen3-ASR 8-bit，不打包 Whisper
-模型或 Whisper 推理后端。
+## 支持范围
 
-## 快速启动
+- 处理器：Apple Silicon (`arm64`)
+- 最低目标系统：macOS 14.0
+- ASR：Qwen3-ASR 1.7B 8-bit，通过 MLX/Metal 运行
+- MT：Hy-MT2 1.8B `Q4_K_M` GGUF，通过 llama.cpp/Metal 运行
+- 系统音频：ScreenCaptureKit，仅桌面壳提供
+- 分发形式：PyInstaller + PyWebView `.app`
+
+当前 App 不支持 Intel Mac。构建脚本会检查 App 内 Mach-O 文件的最低系统版本；只修改 `LSMinimumSystemVersion` 不能让较新系统编译的依赖自动兼容旧系统。
+
+## 开发环境
+
+先安装 Xcode Command Line Tools：
 
 ```bash
-cd /Users/bbzlk/Desktop/code/TRANS
-chmod +x start.sh
-./start.sh -y
+xcode-select --install
 ```
 
-`start.sh` 会优先使用本机虚拟环境：
+建议使用 Python 3.12：
 
-- 如果存在 `.venv/bin/python`，直接使用它。
-- 否则使用 `.venv-macos`。
-- 如果 `.venv-macos` 不存在，会自动创建，然后交给 `run.py` 安装依赖并启动服务。
+```bash
+python3 -m venv .venv-macos
+source .venv-macos/bin/activate
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-app.txt
+cp .env.example .env
+```
 
-服务启动后访问：
+网页模式：
+
+```bash
+python run.py
+```
+
+桌面模式：
+
+```bash
+python desktop_launcher.py
+```
+
+## 模型
+
+分发包不包含模型。首次启动时，桌面版会提示用户下载，并保存到：
 
 ```text
-http://127.0.0.1:8766/
+~/Library/Application Support/TransLive/models/
 ```
 
-## Apple Silicon / Metal
-
-Apple Silicon 默认使用 `mlx-community/Qwen3-ASR-1.7B-8bit`，经
-`mlx-audio` 在 MLX/Metal 上运行。该模型是 8bit 量化版本；`mlx-audio`
-不可用或加载失败时，程序才回退到 MLX Whisper。ASR 与 MT 会顺序加载，避免两个
-大模型同时从磁盘读入造成峰值内存和 I/O 抖动。
-
-MT 默认使用 Hy-MT2 GGUF，并通过带 Metal 的 `llama-cpp-python` 将模型层卸载到
-GPU。桌面状态栏和 `/api/health` 会显示实际后端与加速状态；若 Metal 不可用，会
-明确显示 CPU 降级，而不是静默伪装成 GPU 模式。
-
-如需强制重装带 Metal 的 llama.cpp Python 包：
+源码模式也可以运行：
 
 ```bash
-.venv-macos/bin/python -m pip uninstall -y llama-cpp-python
-CMAKE_ARGS="-DGGML_METAL=on" FORCE_CMAKE=1 \
-  .venv-macos/bin/python -m pip install --no-cache-dir llama-cpp-python
+python scripts/download_models.py --all
 ```
 
-正式构建使用带哈希锁定的 macOS 依赖和 Metal 编译步骤：
+macOS 正式分发环境会设置：
+
+```text
+TRANS_ASR_BACKEND=qwen3
+TRANS_ASR_FALLBACKS_ENABLED=false
+```
+
+因此，Qwen3-ASR 缓存损坏、模型不完整或 `mlx-audio` 缺失时，应用应明确提示错误，而不是退回 Whisper。不要把 Whisper 模型 ID 写入 `TRANS_ASR_QWEN3_MODEL_ID`。
+
+## Metal 检查
+
+Qwen3-ASR 的 MLX wheel 和 Hy-MT2 的 llama.cpp 动态库都必须满足最低系统版本要求。构建脚本会：
+
+1. 从 `requirements-macos-arm64.lock` 安装带哈希的依赖。
+2. 强制选择目标 macOS 版本可用的 MLX/MLX Metal wheel。
+3. 检查 `llama-cpp-python` 是否支持 GPU offload。
+4. 必要时以 `GGML_METAL=on` 和目标部署版本重新编译 llama.cpp。
+5. 检查 App 内所有可识别 Mach-O 文件的最低系统版本。
+
+如果手动安装 llama.cpp，可使用：
+
+```bash
+CMAKE_ARGS="-DGGML_METAL=on -DCMAKE_OSX_DEPLOYMENT_TARGET=14.0" \
+FORCE_CMAKE=1 \
+python -m pip install --force-reinstall --no-cache-dir \
+  --no-binary=llama-cpp-python llama-cpp-python
+```
+
+正式构建仍应使用仓库脚本和锁文件，避免本机临时依赖进入发布包。
+
+## 麦克风与系统音频
+
+麦克风可用于网页模式和桌面模式。系统音频依赖 PyObjC 与 ScreenCaptureKit，只在桌面壳中启用。
+
+首次使用时，在“系统设置 -> 隐私与安全性”中检查：
+
+- 麦克风
+- 屏幕与系统音频录制（不同 macOS 小版本的名称可能略有不同）
+
+如果系统音频选项为灰色：
+
+1. 确认运行的是 `TransLive.app` 或 `desktop_launcher.py`，不是直接打开 `web/index.html`。
+2. 确认当前系统为 macOS 14 或更高版本，机器为 Apple Silicon。
+3. 关闭应用，在系统设置中重新授权后再启动。
+4. 查看应用日志中的 `ScreenCaptureKit` 或 `native audio` 错误。
+
+系统音频采集不需要 BlackHole。网页浏览器自己的 `getUserMedia` 通常只能提供麦克风，这不代表桌面版原生采集不可用。
+
+## 本机测试包
 
 ```bash
 ./scripts/build_macos_app.sh
 ```
 
-不要在 `.env` 的通用 `TRANS_ASR_MODEL_ID` 中填入另一种后端的模型。指定 Qwen3
-权重时使用 `TRANS_ASR_QWEN3_MODEL_ID`；当前默认值已经适合大多数 Apple Silicon
-设备。
+默认产物：
 
-## 系统声音输入
-
-桌面版会优先使用 macOS 原生系统音频采集。首次使用需要在系统设置里授予屏幕录制
-权限；如果当前系统或依赖不支持该能力，仍可退回麦克风输入或 BlackHole/Loopback。
-
-## 常用检查
-
-```bash
-./start.sh --check-only --no-install
-.venv-macos/bin/python -m pytest
+```text
+dist/TransLive.app
+dist/TransLive-macOS-arm64.zip
 ```
 
-如果需要重新下载翻译模型：
+没有指定证书时，脚本会使用 ad-hoc 签名。该包只用于本机测试，不应作为公开分发包。
+
+## Developer ID 签名
+
+先查看钥匙串中可用的代码签名身份：
 
 ```bash
-.venv-macos/bin/python scripts/download_models.py --mt
+security find-identity -v -p codesigning
 ```
+
+再构建签名包：
+
+```bash
+TRANS_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+./scripts/build_macos_app.sh
+```
+
+脚本会为内部 Mach-O 文件、主程序和 App 外层依次签名，并使用 `scripts/entitlements.plist`。签名成功不等于已经公证，也不等于 Gatekeeper 一定接受。
+
+## Apple 公证
+
+先把公证凭据存入钥匙串：
+
+```bash
+xcrun notarytool store-credentials translive-notary
+```
+
+签名、公证并装订票据：
+
+```bash
+TRANS_CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" \
+TRANS_NOTARY_PROFILE="translive-notary" \
+TRANS_DISTRIBUTION=1 \
+./scripts/build_macos_app.sh
+```
+
+`TRANS_DISTRIBUTION=1` 会要求公证配置存在，防止把“只有签名”的包误当成正式分发包。
+
+## 试用构建
+
+需要生成带到期日的测试包时，可以在构建环境中设置 ISO 日期：
+
+```bash
+TRANS_APP_EXPIRY_DATE="YYYY-MM-DD" \
+./scripts/build_macos_app.sh
+```
+
+到期日会写入构建配置，不需要把日期写死到源码。正式开源版本不应默认设置到期日。
+
+## 发布验证
+
+所有构建都应先验证签名结构：
+
+```bash
+codesign --verify --deep --strict --verbose=2 dist/TransLive.app
+codesign -dvvv dist/TransLive.app
+```
+
+Developer ID 公证包再验证 Gatekeeper 与装订票据：
+
+```bash
+spctl --assess --type execute --verbose=4 dist/TransLive.app
+xcrun stapler validate dist/TransLive.app
+```
+
+还应在一台没有开发环境、没有模型缓存的目标 Mac 上验证首次下载、权限提示、ASR、MT、系统音频、退出和再次启动。`codesign` 通过只说明签名结构有效；ad-hoc 测试包不会通过 Developer ID 公证验收。
+
+## App Store 说明
+
+仓库提供 `scripts/entitlements.appstore.plist` 和 `TRANS_APPSTORE=1` 构建入口，但这不代表当前 PyWebView、本地 HTTP 服务、运行时模型下载与第三方模型许可已经满足 Mac App Store 审核要求。Developer ID 站外分发与 Mac App Store 上架是两套不同流程，应分别做沙盒、收据验证、下载机制和审核政策评估。
+
+## 常见问题
+
+### MT 显示 CPU
+
+确认 `llama-cpp-python` 支持 GPU offload，并通过构建脚本重新生成包。仅安装默认 pip wheel 不保证包含满足当前部署目标的 Metal 动态库。
+
+### Qwen3-ASR 报 `load_npz` 或 zip 文件错误
+
+常见原因是模型缓存不完整、下载中断，或把不兼容的模型文件当成 MLX 权重读取。删除对应的损坏缓存并从应用内重新下载；不要把 Whisper 权重放进 Qwen3 模型目录。
+
+### 其他用户看到“已损坏”
+
+先确认使用 Developer ID Application 证书签名，再确认公证成功且票据已 staple。让用户执行 `xattr -cr` 只能作为开发排障手段，不能替代正确签名与公证。
+
+### 应用退出后仍有进程
+
+查看日志中 ASR、MT、ScreenCaptureKit 和 Uvicorn 的关闭记录。发布验收必须覆盖 Dock 退出、窗口关闭以及采集过程中退出三条路径。
